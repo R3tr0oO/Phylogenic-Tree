@@ -1,0 +1,1407 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Construire un arbre phylogénétique</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500&family=IBM+Plex+Sans+Condensed:wght@600;700&family=IBM+Plex+Sans:wght@400;500;600&display=swap" rel="stylesheet">
+<style>
+:root{
+  --encre:#132437;
+  --papier:#EDF1F5;
+  --grille:#DAE3EC;
+  --blanc:#ffffff;
+  --jaune:#FFD84D;
+  --jaune-fonce:#E0A400;
+  --vert:#0F7A63;
+  --gris:#6E7F92;
+  --rouge:#B23A2E;
+  --rayon:6px;
+  --titre:"IBM Plex Sans Condensed","Arial Narrow",system-ui,sans-serif;
+  --corps:"IBM Plex Sans",system-ui,-apple-system,Segoe UI,sans-serif;
+  --mono:"IBM Plex Mono",ui-monospace,Menlo,Consolas,monospace;
+}
+*{box-sizing:border-box}
+html{-webkit-text-size-adjust:100%}
+body{
+  margin:0;
+  font-family:var(--corps);
+  color:var(--encre);
+  background:var(--papier);
+  font-size:15px;line-height:1.45;
+  overflow-x:hidden;
+}
+button,input{font:inherit;color:inherit}
+
+/* ---------- Structure générale ---------- */
+.app{display:flex;flex-direction:column;height:100dvh;overflow:hidden}
+.haut{flex:none}
+
+.entete{
+  background:var(--encre);color:#F3F7FA;
+  padding:8px 12px;
+  display:flex;flex-wrap:wrap;gap:8px 14px;align-items:center;
+}
+.marque{display:flex;align-items:baseline;gap:10px;flex-wrap:wrap;min-width:0}
+.marque__nom{
+  font-family:var(--titre);font-weight:700;font-size:clamp(16px,4.2vw,20px);
+  letter-spacing:.02em;text-transform:uppercase;
+}
+.marque__note{font-family:var(--mono);font-size:11px;color:#8FA7BD}
+.titre-arbre{
+  flex:1 1 220px;min-width:0;
+  background:transparent;border:0;border-bottom:1px dashed #46617C;
+  color:#F3F7FA;padding:6px 2px;font-family:var(--titre);font-size:16px;
+}
+.titre-arbre:focus{outline:none;border-bottom-color:var(--jaune);background:rgba(255,255,255,.06)}
+
+.barre{
+  display:flex;flex-wrap:wrap;gap:6px;align-items:center;
+  padding:8px 14px;background:var(--blanc);
+  border-bottom:1px solid var(--grille);
+}
+.sep{width:1px;align-self:stretch;background:var(--grille);margin:2px 4px}
+.groupe{display:flex;gap:6px;align-items:center}
+.barre__outils{display:flex;flex-wrap:wrap;gap:6px;align-items:center}
+.menu__tete,.menu__section,.burger,.voile{display:none}
+
+/* Menu burger (téléphone et tablette) */
+@media (max-width:899px){
+  .burger{
+    display:flex;flex-direction:column;justify-content:center;gap:5px;
+    width:42px;height:42px;padding:0 10px;flex:none;
+    background:transparent;border:1px solid #46617C;border-radius:9px;cursor:pointer;
+  }
+  .burger span{display:block;height:2px;background:#F3F7FA;border-radius:2px;transition:transform .2s ease,opacity .2s ease}
+  body.menu-ouvert .burger span:nth-child(1){transform:translateY(7px) rotate(45deg)}
+  body.menu-ouvert .burger span:nth-child(2){opacity:0}
+  body.menu-ouvert .burger span:nth-child(3){transform:translateY(-7px) rotate(-45deg)}
+
+  .voile{
+    display:block;position:fixed;inset:0;z-index:75;
+    background:rgba(19,36,55,.5);opacity:0;pointer-events:none;transition:opacity .2s ease;
+  }
+  body.menu-ouvert .voile{opacity:1;pointer-events:auto}
+
+  .barre__outils{
+    position:fixed;top:0;left:0;bottom:0;z-index:80;
+    width:min(300px,82vw);
+    flex-direction:column;flex-wrap:nowrap;align-items:stretch;gap:8px;
+    background:var(--blanc);
+    padding:14px 14px calc(24px + env(safe-area-inset-bottom));
+    overflow-y:auto;-webkit-overflow-scrolling:touch;
+    box-shadow:6px 0 30px rgba(19,36,55,.28);
+    transform:translateX(-102%);transition:transform .22s ease;
+  }
+  body.menu-ouvert .barre__outils{transform:translateX(0)}
+  .barre__outils .sep{display:none}
+  .barre__outils .btn{width:100%;text-align:left}
+  .menu__tete .btn{width:auto;flex:none}
+  .menu__tete{
+    display:flex;align-items:center;justify-content:space-between;
+    padding-bottom:10px;margin-bottom:4px;border-bottom:1px solid var(--grille);
+    font-family:var(--titre);font-size:17px;text-transform:uppercase;letter-spacing:.02em;
+  }
+  .menu__section{
+    display:block;margin:10px 0 0;
+    font-family:var(--mono);font-size:10.5px;letter-spacing:.09em;
+    text-transform:uppercase;color:var(--gris);
+  }
+}
+
+.btn{
+  border:1px solid var(--grille);background:var(--blanc);
+  border-radius:var(--rayon);padding:8px 11px;min-height:38px;cursor:pointer;
+  font-size:13.5px;white-space:nowrap;
+  transition:background .12s ease,border-color .12s ease,transform .06s ease;
+}
+.btn:hover{background:#F6F9FB;border-color:#BFCEDC}
+.btn:active{transform:translateY(1px)}
+.btn:disabled{opacity:.4;cursor:not-allowed}
+.btn--fort{background:var(--vert);border-color:var(--vert);color:#fff}
+.btn--fort:hover{background:#0C6553;border-color:#0C6553}
+.btn--jaune{background:var(--jaune);border-color:var(--jaune-fonce)}
+.btn--jaune:hover{background:#FFCF2A}
+.btn--risque{color:var(--rouge);border-color:#E7C7C2}
+.btn--risque:hover{background:#FBEFED;border-color:var(--rouge)}
+.btn--min{padding:8px 10px;font-family:var(--mono);font-size:13px}
+:focus-visible{outline:2px solid var(--jaune-fonce);outline-offset:2px;border-radius:3px}
+
+.zone{display:flex;flex-direction:column;flex:1 1 auto;min-height:0}
+
+/* ---------- Canevas ---------- */
+.canevas{
+  position:relative;overflow:auto;-webkit-overflow-scrolling:touch;
+  flex:1 1 auto;min-height:0;display:flex;
+  background-color:var(--papier);
+  background-image:
+    linear-gradient(var(--grille) 1px,transparent 1px),
+    linear-gradient(90deg,var(--grille) 1px,transparent 1px);
+  background-size:56px 56px,56px 56px;
+}
+.canevas svg{display:block;margin:auto;touch-action:manipulation}
+.canevas svg *{-webkit-tap-highlight-color:transparent}
+.aide{
+  position:absolute;left:0;right:0;bottom:0;margin:0;
+  font-family:var(--mono);font-size:10.5px;line-height:1.4;color:var(--gris);
+  background:rgba(255,255,255,.92);border-top:1px solid var(--grille);
+  padding:6px 12px;
+}
+.aide[hidden]{display:none}
+
+/* ---------- Panneau : feuille coulissante sur mobile ---------- */
+.panneau{
+  position:fixed;left:0;right:0;bottom:0;z-index:40;
+  background:var(--blanc);
+  padding:0 14px calc(28px + env(safe-area-inset-bottom));
+  max-height:76dvh;overflow-y:auto;-webkit-overflow-scrolling:touch;
+  border-top:1px solid var(--grille);border-radius:16px 16px 0 0;
+  box-shadow:0 -10px 34px rgba(19,36,55,.20);
+  transform:translateY(102%);transition:transform .22s ease;
+}
+.panneau.ouvert{transform:translateY(0)}
+.panneau__haut{
+  position:sticky;top:0;z-index:6;
+  margin:0 -14px;padding:0 14px;
+  background:var(--blanc);border-radius:16px 16px 0 0;
+  box-shadow:0 8px 10px -10px rgba(19,36,55,.45);
+}
+.poignee{width:44px;height:4px;border-radius:99px;background:var(--grille);margin:8px auto 10px}
+.tete-panneau{
+  display:flex;align-items:center;justify-content:space-between;gap:10px;
+  background:var(--blanc);padding-bottom:8px;border-bottom:1px solid var(--grille);
+}
+.tete-panneau .surtitre{margin:0}
+.rappel-tactile{
+  position:fixed;right:12px;left:auto;
+  bottom:calc(12px + env(safe-area-inset-bottom));z-index:35;
+  padding:9px 14px;font-size:13px;border-radius:99px;
+  box-shadow:0 4px 14px rgba(19,36,55,.28);
+}
+.rappel-tactile[hidden]{display:none}
+.surtitre{
+  font-family:var(--mono);font-size:11px;letter-spacing:.09em;
+  text-transform:uppercase;color:var(--gris);margin:0 0 8px;
+}
+.etiquette-type{
+  display:inline-flex;align-items:center;gap:6px;
+  font-family:var(--mono);font-size:11px;text-transform:uppercase;letter-spacing:.06em;
+  padding:3px 8px;border-radius:99px;background:#E8F1EE;color:var(--vert);
+}
+.etiquette-type[data-type="taxon"]{background:#FFF4CC;color:#8A6100}
+.champ{margin:0 0 14px}
+.champ label{display:block;font-size:12.5px;color:var(--gris);margin-bottom:4px}
+.champ input[type=text]{
+  width:100%;padding:9px 10px;border:1px solid var(--grille);
+  border-radius:var(--rayon);background:#FBFDFE;font-size:16px;
+}
+.champ input[type=text]:focus{outline:none;border-color:var(--vert);background:#fff}
+.case{display:flex;align-items:center;gap:8px;font-size:14px;margin:0 0 14px;cursor:pointer}
+.case input{width:18px;height:18px;accent-color:var(--vert);flex:none}
+
+.puces{display:flex;flex-wrap:wrap;gap:6px;margin:0 0 8px;padding:0;list-style:none}
+.puce{
+  display:inline-flex;align-items:center;gap:6px;max-width:100%;
+  background:linear-gradient(transparent 55%,var(--jaune) 55%);
+  border:1px solid #EBD79A;border-radius:4px;padding:3px 4px 3px 8px;font-size:13px;
+}
+.puce span{overflow-wrap:anywhere}
+.puce button{
+  border:0;background:transparent;cursor:pointer;color:#6B5400;
+  font-family:var(--mono);line-height:1;padding:4px 6px;border-radius:3px;
+}
+.puce button:hover{background:rgba(0,0,0,.09)}
+.vide{color:var(--gris);font-size:13px;margin:0 0 8px}
+.ligne-ajout{display:flex;gap:6px;flex-wrap:wrap}
+.ligne-ajout input{flex:1 1 140px;min-width:0}
+.actions{display:flex;flex-wrap:wrap;gap:6px;margin-top:6px}
+.actions .btn{flex:1 1 140px}
+.bloc{border-top:1px solid var(--grille);padding-top:14px;margin-top:16px}
+details.methode summary{
+  cursor:pointer;font-family:var(--mono);font-size:11px;letter-spacing:.09em;
+  text-transform:uppercase;color:var(--gris);
+}
+details.methode ul{margin:10px 0 0;padding-left:18px;font-size:13.5px;color:#33475C}
+details.methode li{margin-bottom:6px}
+.rien{
+  border:1px dashed #C4D2DE;border-radius:var(--rayon);
+  padding:18px;text-align:center;color:var(--gris);font-size:13.5px;background:#FAFCFD;
+}
+.message{
+  position:fixed;left:50%;bottom:18px;transform:translateX(-50%) translateY(12px);
+  background:var(--encre);color:#fff;padding:9px 16px;border-radius:99px;
+  font-size:13.5px;box-shadow:0 6px 18px rgba(19,36,55,.25);opacity:0;pointer-events:none;
+  transition:opacity .2s ease,transform .2s ease;z-index:60;max-width:92vw;text-align:center;
+}
+.message.visible{opacity:1;transform:translateX(-50%) translateY(0)}
+
+/* ---------- Grand écran : deux colonnes, chacune défilante ---------- */
+@media (min-width:900px){
+  .app{height:100dvh;overflow:hidden}
+  .haut{position:static}
+  .entete{padding:12px 22px}
+  .barre{padding:8px 22px}
+  .zone{flex-direction:row;overflow:hidden}
+  .canevas{flex:1 1 auto;height:auto;min-height:0}
+  .panneau{
+    position:static;transform:none;max-height:none;
+    flex:0 0 350px;width:350px;
+    border-top:0;border-radius:0;box-shadow:none;
+    border-left:1px solid var(--grille);padding:18px 18px 32px;
+  }
+  .poignee,#btnFermer,.rappel-tactile{display:none!important}
+  .panneau__haut{position:static;margin:0;padding:0;border-radius:0}
+  .tete-panneau{padding-bottom:0;border-bottom:0}
+  .aide{position:absolute;bottom:0;left:0;right:0;border-bottom:0;border-top:1px solid var(--grille);background:rgba(255,255,255,.92)}
+  .canevas{position:relative}
+}
+/* ---------- Fiche d'espèce ---------- */
+.fiche{margin:0;border:1px solid var(--grille);border-radius:var(--rayon);overflow:hidden}
+.fiche__bandeau{
+  background:#E3EBF3;padding:8px 10px;text-align:center;
+  font-family:var(--titre);font-size:16px;font-weight:700;font-style:italic;
+}
+.fiche__auteur{
+  display:block;font-family:var(--mono);font-style:normal;font-size:11px;
+  font-weight:400;color:var(--gris);margin-top:2px;
+}
+.fiche__rang{display:grid;grid-template-columns:44% 56%;border-top:1px solid var(--grille);font-size:13px}
+.fiche__rang dt{padding:6px 10px;color:var(--gris);font-size:12.5px}
+.fiche__rang dd{margin:0;padding:6px 10px;overflow-wrap:anywhere}
+.fiche__rang.titre{grid-template-columns:1fr;background:#FFF4CC}
+.fiche__rang.titre dt{
+  font-family:var(--mono);font-size:10.5px;letter-spacing:.09em;text-transform:uppercase;
+  color:#8A6100;text-align:center;
+}
+.fiche__notes{padding:8px 10px;border-top:1px solid var(--grille);font-size:13px;color:#33475C}
+.etiquette-type[data-type="espece"]{background:#E3EBF3;color:#2A4A6B}
+
+/* ---------- Fenêtre de saisie ---------- */
+.modale{
+  position:fixed;inset:0;z-index:70;
+  background:rgba(19,36,55,.45);
+  display:flex;align-items:flex-end;justify-content:center;
+}
+.modale[hidden]{display:none}
+.modale__boite{
+  background:var(--blanc);width:100%;max-width:640px;
+  max-height:92dvh;display:flex;flex-direction:column;
+  border-radius:16px 16px 0 0;box-shadow:0 -10px 40px rgba(19,36,55,.35);
+}
+.modale__tete{
+  display:flex;align-items:center;justify-content:space-between;gap:10px;
+  padding:14px 16px;border-bottom:1px solid var(--grille);
+}
+.modale__tete h2{margin:0;font-family:var(--titre);font-size:18px;text-transform:uppercase;letter-spacing:.02em}
+.modale__corps{padding:14px 16px;overflow-y:auto;-webkit-overflow-scrolling:touch}
+.modale__pied{
+  display:flex;gap:8px;justify-content:flex-end;flex-wrap:wrap;
+  padding:12px 16px calc(14px + env(safe-area-inset-bottom));
+  border-top:1px solid var(--grille);background:var(--blanc);
+}
+.modale__pied .btn{flex:1 1 auto}
+.section-form{margin:0 0 18px}
+.section-form h3{
+  margin:0 0 10px;font-family:var(--mono);font-size:11px;letter-spacing:.09em;
+  text-transform:uppercase;color:var(--gris);font-weight:500;
+}
+.grille-form{display:grid;grid-template-columns:1fr;gap:10px}
+.grille-form .champ{margin:0}
+.grille-form .champ--large{grid-column:1/-1}
+.grille-form textarea{
+  width:100%;min-height:70px;padding:9px 10px;border:1px solid var(--grille);
+  border-radius:var(--rayon);background:#FBFDFE;font-family:var(--corps);font-size:16px;
+}
+@media (min-width:600px){
+  .grille-form{grid-template-columns:1fr 1fr;gap:10px 14px}
+  .modale{align-items:center}
+  .modale__boite{border-radius:14px;max-height:88dvh}
+  .modale__pied .btn{flex:0 0 auto}
+}
+/* ---------- Ajustements téléphone (placés en fin de feuille) ---------- */
+@media (max-width:899px){
+  .entete{flex-wrap:nowrap;gap:10px;padding:8px 12px}
+  .marque{display:none}
+  .titre-arbre{flex:1 1 auto;font-size:15px;padding:8px 2px}
+  .barre{padding:6px 10px;gap:6px}
+  .barre .btn{padding:7px 10px;font-size:13px}
+  .barre .btn--min{padding:7px 9px}
+}
+
+/* Écrans bas (téléphone en paysage) : formulaire plus compact */
+@media (max-height:540px){
+  .modale__boite{max-height:96dvh}
+  .modale__tete{padding:9px 14px}
+  .modale__tete h2{font-size:15px}
+  .modale__corps{padding:10px 14px}
+  .section-form{margin-bottom:12px}
+  .section-form h3{margin-bottom:6px}
+  .grille-form{gap:8px 12px}
+  .champ input[type=text],.grille-form textarea{padding:6px 9px}
+  .grille-form textarea{min-height:52px}
+  .modale__pied{padding:8px 14px calc(10px + env(safe-area-inset-bottom))}
+}
+
+@media (prefers-reduced-motion:reduce){*{transition:none!important;animation:none!important}}
+</style>
+</head>
+<body>
+<div class="app">
+
+  <div class="haut">
+    <header class="entete">
+      <button class="burger" id="btnOutils" aria-label="Ouvrir le menu" aria-expanded="false" aria-controls="barreOutils">
+        <span></span><span></span><span></span>
+      </button>
+      <div class="marque">
+        <span class="marque__nom">Arbre phylogénétique</span>
+        <span class="marque__note">racine en haut · taxons alignés en bas</span>
+      </div>
+      <input class="titre-arbre" id="titreArbre" type="text" aria-label="Titre de l'arbre" value="Arbre phylogénétique">
+    </header>
+
+    <div class="barre" id="barre" role="toolbar" aria-label="Actions sur l'arbre">
+      <div class="groupe">
+        <button class="btn btn--min" id="btnMoins" aria-label="Réduire l'affichage">−</button>
+        <button class="btn btn--min" id="btnAjuster">Ajuster</button>
+        <button class="btn btn--min" id="btnPlus" aria-label="Agrandir l'affichage">+</button>
+      </div>
+      <span class="sep"></span>
+      <button class="btn" id="btnAnnuler">Annuler</button>
+
+      <nav class="barre__outils" id="barreOutils" aria-label="Menu">
+        <div class="menu__tete">
+          <span>Menu</span>
+          <button class="btn btn--min" id="btnFermerMenu" aria-label="Fermer le menu">✕</button>
+        </div>
+        <p class="menu__section">Arbre</p>
+        <button class="btn btn--fort" id="btnVierge">Nouvel arbre</button>
+        <span class="sep"></span>
+        <p class="menu__section">Affichage</p>
+        <button class="btn" id="btnDeplierTout">Tout déplier</button>
+        <span class="sep"></span>
+        <p class="menu__section">Fichier</p>
+        <button class="btn" id="btnImporter">Importer un JSON</button>
+        <button class="btn btn--jaune" id="btnExporter">Exporter en JSON</button>
+        <button class="btn" id="btnSvg">Exporter en SVG</button>
+      </nav>
+      <input type="file" id="fichier" accept="application/json,.json" hidden>
+    </div>
+  </div>
+
+  <div class="zone">
+    <main class="canevas" id="canevas">
+      <svg id="arbre" xmlns="http://www.w3.org/2000/svg"></svg>
+      <p class="aide" id="aide">Touchez un taxon ou un nœud pour le modifier · bouton −/+ : replier une branche.</p>
+    </main>
+
+    <aside class="panneau" id="panneau" aria-label="Modifier la sélection">
+      <div class="panneau__haut">
+        <div class="poignee"></div>
+        <div class="tete-panneau">
+          <p class="surtitre">Sélection</p>
+          <button class="btn btn--min" id="btnFermer">Fermer</button>
+        </div>
+      </div>
+
+      <div id="rien" class="rien">Touchez un taxon ou un nœud de l'arbre pour le renommer, y placer une innovation ou ajouter une branche.</div>
+
+      <div id="editeur" hidden>
+        <p style="margin:0 0 12px"><span class="etiquette-type" id="typeSel">Nœud</span></p>
+
+        <div class="champ">
+          <label for="nom">Nom</label>
+          <input type="text" id="nom" autocomplete="off">
+        </div>
+
+        <label class="case" id="ligneExtra" hidden>
+          <input type="checkbox" id="extra">
+          <span>Extra-groupe (sert à enraciner l'arbre)</span>
+        </label>
+
+        <div class="champ">
+          <label id="labelInnov" for="nouvelleInnov">Innovations évolutives sur cette branche</label>
+          <ul class="puces" id="listeInnov"></ul>
+          <p class="vide" id="innovVide">Aucune innovation sur cette branche.</p>
+          <div class="ligne-ajout">
+            <input type="text" id="nouvelleInnov" placeholder="Ex. : poumons" autocomplete="off">
+            <button class="btn btn--jaune" id="btnInnov">Placer</button>
+          </div>
+        </div>
+
+        <div class="bloc" id="blocFiche" hidden>
+          <p class="surtitre">Fiche de l'espèce</p>
+          <dl class="fiche" id="fiche"></dl>
+          <div class="actions">
+            <button class="btn btn--jaune" id="btnEditerFiche">Modifier la fiche</button>
+          </div>
+        </div>
+
+        <div class="bloc">
+          <p class="surtitre">Construire</p>
+          <div class="actions">
+            <button class="btn" id="btnAjoutTaxon">Ajouter un taxon</button>
+            <button class="btn" id="btnAjoutEspece">Ajouter une espèce</button>
+            <button class="btn" id="btnAjoutGroupe">Ajouter un sous-groupe</button>
+            <button class="btn" id="btnRegrouper">Regrouper avec un taxon</button>
+          </div>
+          <div class="actions">
+            <button class="btn btn--min" id="btnGauche">← Déplacer</button>
+            <button class="btn btn--min" id="btnDroite">Déplacer →</button>
+            <button class="btn" id="btnRepli">Replier</button>
+          </div>
+          <div class="actions">
+            <button class="btn btn--risque" id="btnSupprimer">Supprimer cette branche</button>
+          </div>
+        </div>
+
+        <div class="bloc">
+          <details class="methode">
+            <summary>Rappel de la méthode</summary>
+            <ul>
+              <li>Placer l'extra-groupe sur la branche la plus à gauche : ses caractères sont ancestraux.</li>
+              <li>Aller de gauche à droite, des taxons qui ont le moins de caractères dérivés vers ceux qui en ont le plus.</li>
+              <li>Marquer les innovations évolutives par un trait sur la branche, jamais sur un nœud.</li>
+              <li>Appliquer le principe de parcimonie : garder l'arbre qui compte le moins d'innovations.</li>
+              <li>Aligner les taxons et donner un titre à l'arbre.</li>
+            </ul>
+          </details>
+        </div>
+      </div>
+    </aside>
+  </div>
+</div>
+
+<div class="voile" id="voile"></div>
+
+<div class="modale" id="modale" hidden role="dialog" aria-modal="true" aria-labelledby="titreModale">
+  <div class="modale__boite">
+    <div class="modale__tete">
+      <h2 id="titreModale">Nouvelle espèce</h2>
+      <button class="btn btn--min" id="btnFermerModale" aria-label="Fermer la fenêtre">✕</button>
+    </div>
+    <div class="modale__corps">
+      <section class="section-form">
+        <h3>Identité</h3>
+        <div class="grille-form">
+          <div class="champ champ--large">
+            <label for="fNomBinomial">Nom binomial (genre + espèce)</label>
+            <input type="text" id="fNomBinomial" placeholder="Tyrannosaurus rex" autocomplete="off">
+          </div>
+          <div class="champ champ--large">
+            <label for="fNom">Nom affiché sur l'arbre</label>
+            <input type="text" id="fNom" placeholder="Tyrannosaure" autocomplete="off">
+          </div>
+          <div class="champ">
+            <label for="fAuteur">Descripteur</label>
+            <input type="text" id="fAuteur" placeholder="Osborn" autocomplete="off">
+          </div>
+          <div class="champ">
+            <label for="fAnnee">Année de description</label>
+            <input type="text" id="fAnnee" placeholder="1905" autocomplete="off" inputmode="numeric">
+          </div>
+          <label class="case champ--large" style="margin:0">
+            <input type="checkbox" id="fEteint">
+            <span>Espèce éteinte (†)</span>
+          </label>
+          <label class="case champ--large" style="margin:0">
+            <input type="checkbox" id="fExtra">
+            <span>Sert d'extra-groupe</span>
+          </label>
+        </div>
+      </section>
+
+      <section class="section-form">
+        <h3>Répartition dans le temps</h3>
+        <div class="grille-form">
+          <div class="champ">
+            <label for="fIntervalle">Intervalle</label>
+            <input type="text" id="fIntervalle" placeholder="69 – 66 Ma" autocomplete="off">
+          </div>
+          <div class="champ">
+            <label for="fPeriode">Étage / période</label>
+            <input type="text" id="fPeriode" placeholder="Maastrichtien (Crétacé supérieur)" autocomplete="off">
+          </div>
+        </div>
+      </section>
+
+      <section class="section-form">
+        <h3>Classification</h3>
+        <div class="grille-form" id="champsRangs"></div>
+      </section>
+
+      <section class="section-form">
+        <h3>Remarques</h3>
+        <div class="champ">
+          <label for="fNotes">Notes libres</label>
+          <textarea id="fNotes" placeholder="Caractères remarquables, gisement, synonymes…"></textarea>
+        </div>
+      </section>
+    </div>
+    <div class="modale__pied">
+      <button class="btn" id="btnAnnulerEspece">Annuler</button>
+      <button class="btn btn--fort" id="btnValiderEspece">Ajouter l'espèce</button>
+    </div>
+  </div>
+</div>
+
+<button class="btn btn--fort rappel-tactile" id="btnRouvrir" hidden>Modifier ▴</button>
+<div class="message" id="message" role="status" aria-live="polite"></div>
+
+<script>
+(function(){
+"use strict";
+
+/* ====================== Réglages de dessin ====================== */
+var COL = 158, RANG = 112, MARGE = 60, TETE = 96, PIED = 108, TRI = 52;
+
+var STYLE_SVG = [
+  '.branche{stroke:#132437;stroke-width:2.2;fill:none;stroke-linecap:square}',
+  '.branche.extra{stroke:#6E7F92;stroke-dasharray:7 5}',
+  '.tronc{stroke:#132437;stroke-width:2.8;fill:none}',
+  '.regle{stroke:#B9C8D6;stroke-width:1;stroke-dasharray:3 6}',
+  '.noeud{fill:#ffffff;stroke:#132437;stroke-width:2.2;cursor:pointer}',
+  '.noeud.sel{fill:#FFD84D;stroke:#132437}',
+  '.pointe{fill:#132437}',
+  '.pointe.extra{fill:#6E7F92}',
+  '.taxon{font-family:"IBM Plex Sans",system-ui,sans-serif;font-size:13.5px;font-weight:600;fill:#132437;text-anchor:middle;cursor:pointer}',
+  '.taxon.extra{fill:#6E7F92;font-weight:500;font-style:italic}',
+  '.taxon.sel{fill:#0F7A63}',
+  '.marque-extra{font-family:"IBM Plex Mono",monospace;font-size:9.5px;fill:#6E7F92;text-anchor:middle;letter-spacing:.06em}',
+  '.trait-innov{stroke:#132437;stroke-width:2.4;stroke-linecap:round}',
+  '.surligne{fill:#FFD84D}',
+  '.txt-innov{font-family:"IBM Plex Sans",system-ui,sans-serif;font-size:11.5px;fill:#132437}',
+  '.nom-noeud{font-family:"IBM Plex Mono",monospace;font-size:10.5px;fill:#6E7F92}',
+  '.bascule{fill:#ffffff;stroke:#6E7F92;stroke-width:1.4;cursor:pointer}',
+  '.bascule-txt{font-family:"IBM Plex Mono",monospace;font-size:12px;fill:#132437;text-anchor:middle;pointer-events:none}',
+  '.clade{fill:#DCE7EF;stroke:#132437;stroke-width:2;cursor:pointer}',
+  '.clade.sel{fill:#FFD84D}',
+  '.cible{fill:transparent;cursor:pointer}',
+  '.zone-clic{fill:transparent;stroke:transparent;cursor:pointer}',
+  '.racine-txt{font-family:"IBM Plex Mono",monospace;font-size:11px;fill:#6E7F92;text-anchor:middle}',
+  '.pointe-espece{fill:#2A4A6B;stroke:#132437;stroke-width:1.4}',
+  '.pointe-espece.extra{fill:#9AAEC0}',
+  '.binomial{font-family:"IBM Plex Sans",system-ui,sans-serif;font-size:11px;font-style:italic;fill:#33475C;text-anchor:middle}'
+].join('\n');
+
+var NS = 'http://www.w3.org/2000/svg';
+var etat = { titre:'', racine:null, selection:null, zoom:1 };
+var historique = [];
+
+function uid(){ return 'n' + Math.random().toString(36).slice(2,9); }
+function taxon(nom, extra){ return {id:uid(), type:'taxon', nom:nom||'Nouveau taxon', innovations:[], extraGroupe:!!extra, replie:false, enfants:[]}; }
+var RANGS = [
+  ['regne','Règne'], ['embranchement','Embranchement'], ['sousEmbranchement','Sous-embranchement'],
+  ['classe','Classe'], ['superOrdre','Super-ordre'], ['ordre','Ordre'], ['sousOrdre','Sous-ordre'],
+  ['infraOrdre','Infra-ordre'], ['microOrdre','Micro-ordre'], ['superFamille','Super-famille'],
+  ['famille','Famille'], ['sousFamille','Sous-famille'], ['genre','Genre']
+];
+function ficheVide(){
+  var f = {nomBinomial:'', auteur:'', annee:'', eteint:false, intervalle:'', periode:'', notes:'', rangs:{}};
+  RANGS.forEach(function(r){ f.rangs[r[0]] = ''; });
+  return f;
+}
+function espece(nom, fiche){
+  return {id:uid(), type:'espece', nom:nom||'Nouvelle espèce', innovations:[], extraGroupe:false, replie:false, enfants:[], fiche:fiche||ficheVide()};
+}
+function noeud(nom, enfants){ return {id:uid(), type:'noeud', nom:nom||'Ancêtre commun', innovations:[], extraGroupe:false, replie:false, enfants:enfants||[]}; }
+
+function arbreVierge(){
+  return noeud('Ancêtre commun', [taxon('Taxon 1'), taxon('Taxon 2')]);
+}
+
+/* ---------- Parcours ---------- */
+function visibles(n){ return n.replie ? [] : n.enfants; }
+function parcourir(n, f, parent){ f(n, parent); n.enfants.forEach(function(e){ parcourir(e, f, n); }); }
+function trouver(id){ var r=null; parcourir(etat.racine, function(n){ if(n.id===id) r=n; }); return r; }
+function parentDe(id){ var r=null; parcourir(etat.racine, function(n,p){ if(n.id===id) r=p; }); return r; }
+function nbTaxons(n){ if(!n.enfants.length) return 1; return n.enfants.reduce(function(s,e){ return s+nbTaxons(e); },0); }
+function estGroupe(n){ return n.type === 'noeud'; }
+function estEspece(n){ return n.type === 'espece'; }
+function estTerminal(n){ return n.type === 'taxon' || n.type === 'espece'; }
+
+/* Où insérer un nouvel élément :
+   - sur un groupe : à la fin de ses branches ;
+   - sur un taxon ou une espèce (toujours terminal) : juste à côté, dans le même groupe. */
+function pointInsertion(){
+  var n = etat.selection ? trouver(etat.selection) : null;
+  if(!n) return {parent: etat.racine, index: etat.racine.enfants.length};
+  if(!estTerminal(n)) return {parent: n, index: n.enfants.length};
+  var p = parentDe(n.id);
+  if(!p) return {parent: etat.racine, index: etat.racine.enfants.length};
+  return {parent: p, index: p.enfants.indexOf(n) + 1};
+}
+function inserer(nouveau){
+  var pt = pointInsertion();
+  pt.parent.replie = false;
+  pt.parent.enfants.splice(pt.index, 0, nouveau);
+  etat.selection = nouveau.id;
+}
+
+/* Après une suppression : un groupe vide disparaît, un groupe à une seule
+   branche est fusionné avec elle (ses innovations sont conservées). */
+function nettoyer(n){
+  if(!n || n === etat.racine || estTerminal(n)) return;
+  var p = parentDe(n.id);
+  if(!p) return;
+  if(n.enfants.length === 0){
+    p.enfants.splice(p.enfants.indexOf(n), 1);
+    nettoyer(p);
+  } else if(n.enfants.length === 1){
+    var reste = n.enfants[0];
+    reste.innovations = n.innovations.concat(reste.innovations);
+    p.enfants[p.enfants.indexOf(n)] = reste;
+    nettoyer(p);
+  }
+}
+
+/* ====================== Historique ====================== */
+function memoriser(){
+  historique.push(JSON.stringify({titre:etat.titre, racine:etat.racine}));
+  if(historique.length>40) historique.shift();
+  document.getElementById('btnAnnuler').disabled = false;
+}
+function annuler(){
+  if(!historique.length) return;
+  var prec = JSON.parse(historique.pop());
+  etat.titre = prec.titre; etat.racine = prec.racine;
+  if(!trouver(etat.selection)) etat.selection = null;
+  document.getElementById('titreArbre').value = etat.titre;
+  document.getElementById('btnAnnuler').disabled = historique.length===0;
+  tout();
+  dire('Dernière action annulée');
+}
+
+/* ====================== Rendu ====================== */
+function el(tag, attrs, parent){
+  var e = document.createElementNS(NS, tag);
+  if(attrs) for(var k in attrs) e.setAttribute(k, attrs[k]);
+  if(parent) parent.appendChild(e);
+  return e;
+}
+function couper(texte, max){
+  var mots = String(texte).split(/\s+/), lignes = [], cour = '';
+  mots.forEach(function(m){
+    if(!cour) cour = m;
+    else if((cour+' '+m).length <= max) cour += ' ' + m;
+    else { lignes.push(cour); cour = m; }
+  });
+  if(cour) lignes.push(cour);
+  return lignes.slice(0,3);
+}
+
+/* Disposition : la racine est en haut, les taxons alignés en bas. */
+function disposer(){
+  var feuilles = [], pos = {};
+  (function collecte(n){
+    var enf = visibles(n);
+    if(!enf.length) feuilles.push(n); else enf.forEach(collecte);
+  })(etat.racine);
+
+  feuilles.forEach(function(f,i){ pos[f.id] = {x: MARGE + i*COL + COL/2}; });
+
+  (function mesurer(n){
+    var enf = visibles(n);
+    if(enf.length){
+      enf.forEach(mesurer);
+      var xs = enf.map(function(e){ return pos[e.id].x; });
+      pos[n.id] = {x: (Math.min.apply(null,xs) + Math.max.apply(null,xs))/2};
+      pos[n.id].h = RANG + Math.max.apply(null, enf.map(function(e){ return pos[e.id].h; }));
+    } else {
+      pos[n.id].h = n.enfants.length ? TRI : 0;  // groupe replié : hauteur du triangle
+    }
+  })(etat.racine);
+
+  var hRacine = pos[etat.racine.id].h;
+  var yTaxons = TETE + hRacine;
+  parcourir(etat.racine, function(n){
+    if(pos[n.id]) pos[n.id].y = yTaxons - pos[n.id].h;
+  });
+
+  return {pos:pos, feuilles:feuilles, yTaxons:yTaxons};
+}
+
+function dessinerInnovations(g, n, x, yHaut, yBas){
+  var liste = n.innovations || [];
+  if(!liste.length) return;
+  var dispo = yBas - yHaut;
+  liste.forEach(function(txt, i){
+    var y = yHaut + dispo*(i+1)/(liste.length+1);
+    el('line', {x1:x-11, y1:y, x2:x+11, y2:y, 'class':'trait-innov'}, g);
+    var lignes = couper(txt, 17);
+    var larg = Math.max.apply(null, lignes.map(function(l){ return l.length; }))*6.05 + 12;
+    var haut = lignes.length*13.5 + 4;
+    el('rect', {x:x+14, y:(y-haut/2).toFixed(1), width:larg.toFixed(1), height:haut.toFixed(1), rx:2, 'class':'surligne'}, g);
+    var t = el('text', {x:x+20, y:(y - (lignes.length-1)*6.75 + 4).toFixed(1), 'class':'txt-innov'}, g);
+    lignes.forEach(function(l, j){
+      var ts = el('tspan', {x:x+20, dy: j ? 13.5 : 0}, t);
+      ts.textContent = l;
+    });
+  });
+}
+
+/* Zones tactiles élargies : dessinées en dernier, au-dessus du tracé. */
+var zonesTactiles = [];
+function viserPoint(x, y, r, attr, id){
+  zonesTactiles.push({forme:'circle', a:{cx:x, cy:y, r:r, 'class':'zone-clic'}, attr:attr, id:id});
+}
+function viserZone(x, y, w, h, attr, id){
+  zonesTactiles.push({forme:'rect', a:{x:x-w/2, y:y, width:w, height:h, 'class':'zone-clic'}, attr:attr, id:id});
+}
+function poserZonesTactiles(svg){
+  var g = el('g', {}, svg);
+  zonesTactiles.forEach(function(z){
+    var e = el(z.forme, z.a, g);
+    e.setAttribute(z.attr, z.id);
+    if(z.attr === 'data-id'){ e.setAttribute('tabindex','0'); e.setAttribute('role','button'); }
+  });
+}
+
+function etiquetteSous(g, n, x, yTaxons, sel, sousTitre, classeSous){
+  var nom = (estEspece(n) && n.fiche.eteint ? '\u2020 ' : '') + n.nom;
+  var lignes = couper(nom, 15);
+  var y0 = yTaxons + 26;
+  var t = el('text', {'class':'taxon' + (n.extraGroupe?' extra':'') + (sel?' sel':''), 'data-id':n.id, y:y0}, g);
+  lignes.forEach(function(l, j){
+    var ts = el('tspan', {x:x, dy: j ? 15 : 0}, t);
+    ts.textContent = l;
+  });
+  var bas = lignes.length*15;
+  if(sousTitre){
+    var sousLignes = couper(sousTitre, 20);
+    var m = el('text', {x:x, y:y0 + bas, 'class':classeSous || 'marque-extra'}, g);
+    sousLignes.forEach(function(l, j){
+      var ts2 = el('tspan', {x:x, dy: j ? 13 : 0}, m);
+      ts2.textContent = l;
+    });
+    bas += sousLignes.length*13;
+  }
+  viserZone(x, yTaxons + 4, COL - 12, 26 + bas, 'data-id', n.id);
+}
+
+function rendreArbre(){
+  var svg = document.getElementById('arbre');
+  while(svg.firstChild) svg.removeChild(svg.firstChild);
+
+  zonesTactiles = [];
+  var d = disposer(), pos = d.pos, feuilles = d.feuilles, yTaxons = d.yTaxons;
+  var largeur = MARGE*2 + Math.max(1, feuilles.length)*COL;
+  var hauteur = yTaxons + PIED;
+
+  var style = document.createElementNS(NS, 'style');
+  style.textContent = STYLE_SVG;
+  svg.appendChild(style);
+  svg.setAttribute('viewBox', '0 0 ' + largeur + ' ' + hauteur);
+  svg.setAttribute('width', Math.round(largeur*etat.zoom));
+  svg.setAttribute('height', Math.round(hauteur*etat.zoom));
+
+  el('rect', {x:0, y:0, width:largeur, height:hauteur, 'class':'cible', 'data-fond':'1'}, svg);
+  el('line', {x1:20, y1:yTaxons, x2:largeur-20, y2:yTaxons, 'class':'regle'}, svg);
+
+  var g = el('g', {}, svg);
+
+  (function dessiner(n, parentY){
+    var p = pos[n.id], enf = visibles(n);
+    var sel = etat.selection === n.id;
+
+    var yDepart = parentY === null ? p.y - (TETE - 46) : parentY;
+    el('line', {
+      x1:p.x, y1:yDepart, x2:p.x, y2:p.y,
+      'class': parentY === null ? 'tronc' : ('branche' + (n.extraGroupe?' extra':''))
+    }, g);
+    if(parentY === null){
+      var r = el('text', {x:p.x, y:yDepart - 12, 'class':'racine-txt'}, g);
+      r.textContent = 'origine de l\u2019arbre';
+    }
+    dessinerInnovations(g, n, p.x, yDepart, p.y);
+
+    if(enf.length){
+      var xs = enf.map(function(e){ return pos[e.id].x; });
+      el('line', {x1:Math.min.apply(null,xs), y1:p.y, x2:Math.max.apply(null,xs), y2:p.y, 'class':'branche'}, g);
+      enf.forEach(function(e){ dessiner(e, p.y); });
+      el('circle', {cx:p.x, cy:p.y, r:7, 'class':'noeud' + (sel?' sel':''), 'data-id':n.id}, g);
+      el('circle', {cx:p.x-26, cy:p.y, r:11, 'class':'bascule', 'data-bascule':n.id}, g);
+      viserPoint(p.x, p.y, 15, 'data-id', n.id);
+      viserPoint(p.x-26, p.y, 17, 'data-bascule', n.id);
+      var bt = el('text', {x:p.x-26, y:p.y+4, 'class':'bascule-txt'}, g);
+      bt.textContent = '\u2212';
+      var nn = el('text', {x:p.x+12, y:p.y-9, 'class':'nom-noeud'}, g);
+      nn.textContent = n.nom;
+    } else if(n.enfants.length){
+      // groupe replié : triangle pointant vers le bas
+      var nb = nbTaxons(n);
+      var demi = Math.min(52, Math.max(22, nb*7));
+      el('polygon', {
+        points: p.x + ',' + p.y + ' ' + (p.x-demi) + ',' + yTaxons + ' ' + (p.x+demi) + ',' + yTaxons,
+        'class':'clade' + (sel?' sel':''), 'data-id':n.id
+      }, g);
+      viserPoint(p.x, (p.y + yTaxons)/2, 20, 'data-id', n.id);
+      etiquetteSous(g, n, p.x, yTaxons, sel, nb + ' TAXON' + (nb>1?'S':'') + ' REPLI' + (nb>1?'ÉS':'É'));
+      el('circle', {cx:p.x-26, cy:p.y, r:11, 'class':'bascule', 'data-bascule':n.id}, g);
+      viserPoint(p.x-26, p.y, 17, 'data-bascule', n.id);
+      var bt2 = el('text', {x:p.x-26, y:p.y+4, 'class':'bascule-txt'}, g);
+      bt2.textContent = '+';
+    } else if(estGroupe(n)){
+      // nœud sans branche : point d'accroche pour continuer la construction
+      el('circle', {cx:p.x, cy:p.y, r:7, 'class':'noeud' + (sel?' sel':''), 'data-id':n.id}, g);
+      viserPoint(p.x, p.y, 15, 'data-id', n.id);
+      etiquetteSous(g, n, p.x, yTaxons, sel, 'GROUPE VIDE');
+    } else if(estEspece(n)){
+      el('rect', {x:p.x-5.5, y:p.y-5.5, width:11, height:11, 'class':'pointe-espece' + (n.extraGroupe?' extra':''), 'data-id':n.id}, g);
+      viserPoint(p.x, p.y, 15, 'data-id', n.id);
+      var bino = n.fiche.nomBinomial;
+      var sous = bino && bino !== n.nom ? bino : (n.extraGroupe ? 'EXTRA-GROUPE' : '');
+      etiquetteSous(g, n, p.x, yTaxons, sel, sous, bino && bino !== n.nom ? 'binomial' : 'marque-extra');
+    } else {
+      el('circle', {cx:p.x, cy:p.y, r:5, 'class':'pointe' + (n.extraGroupe?' extra':''), 'data-id':n.id}, g);
+      viserPoint(p.x, p.y, 15, 'data-id', n.id);
+      etiquetteSous(g, n, p.x, yTaxons, sel, n.extraGroupe ? 'EXTRA-GROUPE' : '');
+    }
+  })(etat.racine, null);
+
+  poserZonesTactiles(svg);
+}
+
+/* ====================== Panneau ====================== */
+function majPanneau(){
+  var n = etat.selection ? trouver(etat.selection) : null;
+  document.getElementById('rien').hidden = !!n;
+  document.getElementById('editeur').hidden = !n;
+  document.getElementById('btnRouvrir').hidden =
+    !(n && window.matchMedia('(max-width:899px)').matches && !document.getElementById('panneau').classList.contains('ouvert'));
+  if(!n) return;
+
+  var estRacine = n.id === etat.racine.id;
+  var groupe = estGroupe(n);
+  var aDesEnfants = n.enfants.length > 0;
+  var esp = estEspece(n);
+  var et = document.getElementById('typeSel');
+  et.textContent = esp ? 'Espèce' : (estRacine ? 'Racine · ancêtre commun' : (groupe ? 'Nœud · ancêtre commun' : 'Taxon'));
+  et.dataset.type = esp ? 'espece' : (groupe ? 'noeud' : 'taxon');
+  document.getElementById('blocFiche').hidden = !esp;
+  if(esp) afficherFiche(n);
+
+  document.getElementById('nom').value = n.nom;
+  document.getElementById('ligneExtra').hidden = groupe;
+  document.getElementById('extra').checked = !!n.extraGroupe;
+
+  document.getElementById('labelInnov').textContent = estRacine
+    ? 'Innovations évolutives sur le tronc'
+    : 'Innovations évolutives sur cette branche';
+
+  var ul = document.getElementById('listeInnov');
+  ul.innerHTML = '';
+  n.innovations.forEach(function(txt, i){
+    var li = document.createElement('li');
+    li.className = 'puce';
+    var s = document.createElement('span'); s.textContent = txt; li.appendChild(s);
+    var b = document.createElement('button');
+    b.type = 'button'; b.textContent = '✕';
+    b.setAttribute('aria-label', 'Retirer l\'innovation ' + txt);
+    b.addEventListener('click', function(){ memoriser(); n.innovations.splice(i,1); tout(); });
+    li.appendChild(b);
+    ul.appendChild(li);
+  });
+  document.getElementById('innovVide').hidden = n.innovations.length > 0;
+
+  var aCote = estTerminal(n);
+  document.getElementById('btnAjoutTaxon').textContent = aCote ? 'Ajouter un taxon à côté' : 'Ajouter un taxon';
+  document.getElementById('btnAjoutEspece').textContent = aCote ? 'Ajouter une espèce à côté' : 'Ajouter une espèce';
+  document.getElementById('btnAjoutGroupe').textContent = aCote ? 'Ajouter un sous-groupe à côté' : 'Ajouter un sous-groupe';
+  document.getElementById('btnAjoutTaxon').disabled = false;
+  document.getElementById('btnAjoutEspece').disabled = false;
+  document.getElementById('btnAjoutGroupe').disabled = false;
+  var repli = document.getElementById('btnRepli');
+  repli.disabled = !aDesEnfants;
+  repli.textContent = n.replie ? 'Déplier' : 'Replier';
+  document.getElementById('btnSupprimer').disabled = estRacine;
+  var p = parentDe(n.id);
+  var idx = p ? p.enfants.indexOf(n) : -1;
+  document.getElementById('btnGauche').disabled = !p || idx<=0;
+  document.getElementById('btnDroite').disabled = !p || idx===-1 || idx>=p.enfants.length-1;
+}
+
+/* ====================== Fiche d'espèce ====================== */
+function ligneFiche(dl, label, valeur, classe){
+  if(classe !== 'titre' && !valeur) return;
+  var d = document.createElement('div');
+  d.className = 'fiche__rang' + (classe ? ' ' + classe : '');
+  var dt = document.createElement('dt'); dt.textContent = label;
+  var dd = document.createElement('dd'); dd.textContent = valeur;
+  d.appendChild(dt);
+  if(classe !== 'titre') d.appendChild(dd);
+  dl.appendChild(d);
+}
+function afficherFiche(n){
+  var f = n.fiche, dl = document.getElementById('fiche');
+  dl.innerHTML = '';
+  var bandeau = document.createElement('div');
+  bandeau.className = 'fiche__bandeau';
+  bandeau.textContent = (f.eteint ? '\u2020 ' : '') + (f.nomBinomial || n.nom);
+  var auteur = [f.auteur, f.annee].filter(Boolean).join(', ');
+  if(auteur){
+    var sp = document.createElement('span');
+    sp.className = 'fiche__auteur';
+    sp.textContent = auteur;
+    bandeau.appendChild(sp);
+  }
+  dl.appendChild(bandeau);
+
+  if(f.intervalle || f.periode){
+    ligneFiche(dl, 'Répartition dans le temps', '', 'titre');
+    ligneFiche(dl, 'Intervalle', f.intervalle);
+    ligneFiche(dl, 'Étage / période', f.periode);
+  }
+  var aRangs = RANGS.some(function(r){ return f.rangs[r[0]]; });
+  if(aRangs){
+    ligneFiche(dl, 'Classification', '', 'titre');
+    RANGS.forEach(function(r){ ligneFiche(dl, r[1], f.rangs[r[0]]); });
+  }
+  if(f.notes){
+    var notes = document.createElement('div');
+    notes.className = 'fiche__notes';
+    notes.textContent = f.notes;
+    dl.appendChild(notes);
+  }
+  if(!f.intervalle && !f.periode && !aRangs && !f.notes && !auteur && !f.nomBinomial){
+    var vide = document.createElement('div');
+    vide.className = 'fiche__notes';
+    vide.textContent = 'Fiche vide : renseignez la classification avec « Modifier la fiche ».';
+    dl.appendChild(vide);
+  }
+}
+
+/* ---- Fenêtre de saisie d'une espèce ---- */
+var modale = document.getElementById('modale');
+var cibleEspece = null;   // {mode:'creation', parent:n} ou {mode:'edition', espece:n}
+
+(function construireChampsRangs(){
+  var boite = document.getElementById('champsRangs');
+  RANGS.forEach(function(r){
+    var d = document.createElement('div');
+    d.className = 'champ';
+    var lab = document.createElement('label');
+    lab.setAttribute('for', 'f_' + r[0]);
+    lab.textContent = r[1];
+    var inp = document.createElement('input');
+    inp.type = 'text'; inp.id = 'f_' + r[0]; inp.autocomplete = 'off';
+    d.appendChild(lab); d.appendChild(inp);
+    boite.appendChild(d);
+  });
+})();
+
+function val(id, v){
+  var e = document.getElementById(id);
+  if(v === undefined) return e.type === 'checkbox' ? e.checked : e.value.trim();
+  if(e.type === 'checkbox') e.checked = !!v; else e.value = v || '';
+}
+
+function ouvrirModale(cible){
+  cibleEspece = cible;
+  var creation = cible.mode === 'creation';
+  var n = creation ? null : cible.espece;
+  var f = creation ? ficheVide() : n.fiche;
+
+  document.getElementById('titreModale').textContent = creation ? 'Nouvelle espèce' : 'Fiche de l\u2019espèce';
+  document.getElementById('btnValiderEspece').textContent = creation ? 'Ajouter l\u2019espèce' : 'Enregistrer';
+
+  val('fNom', creation ? '' : n.nom);
+  val('fNomBinomial', f.nomBinomial);
+  val('fAuteur', f.auteur);
+  val('fAnnee', f.annee);
+  val('fEteint', f.eteint);
+  val('fExtra', creation ? false : n.extraGroupe);
+  val('fIntervalle', f.intervalle);
+  val('fPeriode', f.periode);
+  val('fNotes', f.notes);
+  RANGS.forEach(function(r){ val('f_' + r[0], f.rangs[r[0]]); });
+
+  modale.hidden = false;
+  document.getElementById('modale').querySelector('.modale__corps').scrollTop = 0;
+  setTimeout(function(){ document.getElementById('fNomBinomial').focus(); }, 40);
+}
+function fermerModale(){ modale.hidden = true; cibleEspece = null; }
+
+document.getElementById('btnFermerModale').addEventListener('click', fermerModale);
+document.getElementById('btnAnnulerEspece').addEventListener('click', fermerModale);
+modale.addEventListener('click', function(ev){ if(ev.target === modale) fermerModale(); });
+document.addEventListener('keydown', function(ev){
+  if(ev.key !== 'Escape') return;
+  if(!modale.hidden) fermerModale();
+  else if(menuOuvert()) fermerMenu(true);
+});
+
+document.getElementById('btnValiderEspece').addEventListener('click', function(){
+  if(!cibleEspece) return;
+  var binomial = val('fNomBinomial');
+  var affiche = val('fNom');
+  if(!binomial && !affiche){
+    dire('Indiquez au moins le nom binomial ou le nom affiché.');
+    document.getElementById('fNomBinomial').focus();
+    return;
+  }
+  var f = ficheVide();
+  f.nomBinomial = binomial;
+  f.auteur = val('fAuteur');
+  f.annee = val('fAnnee');
+  f.eteint = val('fEteint');
+  f.intervalle = val('fIntervalle');
+  f.periode = val('fPeriode');
+  f.notes = document.getElementById('fNotes').value.trim();
+  RANGS.forEach(function(r){ f.rangs[r[0]] = val('f_' + r[0]); });
+
+  memoriser();
+  if(cibleEspece.mode === 'creation'){
+    var e = espece(affiche || binomial, f);
+    e.extraGroupe = val('fExtra');
+    inserer(e);
+    dire('Espèce ajoutée en bout de branche');
+  } else {
+    var n = cibleEspece.espece;
+    n.nom = affiche || binomial;
+    n.fiche = f;
+    n.extraGroupe = val('fExtra');
+    dire('Fiche enregistrée');
+  }
+  fermerModale();
+  tout();
+  ouvrirPanneau();
+});
+
+document.getElementById('btnAjoutEspece').addEventListener('click', function(){
+  if(!trouver(etat.selection)) return;
+  ouvrirModale({mode:'creation'});
+});
+document.getElementById('btnEditerFiche').addEventListener('click', function(){
+  var n = trouver(etat.selection);
+  if(!n || !estEspece(n)) return;
+  ouvrirModale({mode:'edition', espece:n});
+});
+
+var panneau = document.getElementById('panneau');
+var btnRouvrir = document.getElementById('btnRouvrir');
+function petitEcran(){ return window.matchMedia('(max-width:899px)').matches; }
+function ouvrirPanneau(){
+  if(!petitEcran()) return;
+  panneau.classList.add('ouvert');
+  btnRouvrir.hidden = true;
+  panneau.scrollTop = 0;
+}
+function fermerPanneau(){
+  panneau.classList.remove('ouvert');
+  btnRouvrir.hidden = !(petitEcran() && etat.selection);
+}
+document.getElementById('btnFermer').addEventListener('click', fermerPanneau);
+btnRouvrir.addEventListener('click', ouvrirPanneau);
+
+function tout(){ rendreArbre(); majPanneau(); }
+
+var minuteur;
+function dire(txt){
+  var m = document.getElementById('message');
+  var pan = document.getElementById('panneau');
+  if(pan.classList.contains('ouvert')){
+    m.style.bottom = Math.round(window.innerHeight - pan.getBoundingClientRect().top + 10) + 'px';
+  } else {
+    m.style.bottom = '';
+  }
+  m.textContent = txt; m.classList.add('visible');
+  clearTimeout(minuteur);
+  minuteur = setTimeout(function(){ m.classList.remove('visible'); }, 2400);
+}
+
+/* ====================== Interactions sur l'arbre ====================== */
+var canevas = document.getElementById('canevas');
+var svgEl = document.getElementById('arbre');
+
+svgEl.addEventListener('click', function(ev){
+  var c = ev.target.closest('[data-bascule]');
+  if(c){ basculer(c.getAttribute('data-bascule')); return; }
+  var t = ev.target.closest('[data-id]');
+  if(t){
+    document.getElementById('aide').hidden = true;
+    etat.selection = t.getAttribute('data-id'); tout(); ouvrirPanneau(); return;
+  }
+  etat.selection = null; tout(); fermerPanneau();
+});
+svgEl.addEventListener('dblclick', function(ev){
+  var t = ev.target.closest('[data-id]');
+  if(t) basculer(t.getAttribute('data-id'));
+});
+svgEl.addEventListener('keydown', function(ev){
+  if(ev.key !== 'Enter' && ev.key !== ' ') return;
+  var t = ev.target.closest('[data-id]');
+  if(t){ ev.preventDefault(); etat.selection = t.getAttribute('data-id'); tout(); ouvrirPanneau(); }
+});
+
+function basculer(id){
+  var n = trouver(id);
+  if(!n || !n.enfants.length) return;
+  memoriser();
+  n.replie = !n.replie;
+  tout();
+}
+
+/* ====================== Édition ====================== */
+document.getElementById('nom').addEventListener('input', function(){
+  var n = trouver(etat.selection); if(!n) return;
+  n.nom = this.value || '';
+  rendreArbre();
+});
+document.getElementById('nom').addEventListener('focus', memoriser);
+
+document.getElementById('extra').addEventListener('change', function(){
+  var n = trouver(etat.selection); if(!n) return;
+  memoriser(); n.extraGroupe = this.checked; tout();
+});
+
+function ajouterInnovation(){
+  var champ = document.getElementById('nouvelleInnov');
+  var v = champ.value.trim();
+  var n = trouver(etat.selection);
+  if(!v || !n) return;
+  memoriser();
+  n.innovations.push(v);
+  champ.value = '';
+  tout();
+  champ.focus();
+}
+document.getElementById('btnInnov').addEventListener('click', ajouterInnovation);
+document.getElementById('nouvelleInnov').addEventListener('keydown', function(ev){
+  if(ev.key === 'Enter'){ ev.preventDefault(); ajouterInnovation(); }
+});
+
+document.getElementById('btnAjoutTaxon').addEventListener('click', function(){
+  if(!trouver(etat.selection)) return;
+  memoriser();
+  inserer(taxon('Nouveau taxon'));
+  tout(); ouvrirPanneau();
+});
+document.getElementById('btnAjoutGroupe').addEventListener('click', function(){
+  if(!trouver(etat.selection)) return;
+  memoriser();
+  inserer(noeud('Nouvel ancêtre commun', [taxon('Taxon A'), taxon('Taxon B')]));
+  tout(); ouvrirPanneau();
+});
+document.getElementById('btnRegrouper').addEventListener('click', function(){
+  var n = trouver(etat.selection); if(!n) return;
+  memoriser();
+  var frere = taxon('Nouveau taxon');
+  var g = noeud('Nouvel ancêtre commun', [n, frere]);
+  var p = parentDe(n.id);
+  if(p){ p.enfants[p.enfants.indexOf(n)] = g; }
+  else { etat.racine = g; g.innovations = n.innovations; n.innovations = []; }
+  etat.selection = frere.id;
+  tout();
+  dire('Regroupé sous un nouvel ancêtre commun');
+});
+function deplacer(pas){
+  var n = trouver(etat.selection); if(!n) return;
+  var p = parentDe(n.id); if(!p) return;
+  var i = p.enfants.indexOf(n), j = i + pas;
+  if(j < 0 || j >= p.enfants.length) return;
+  memoriser();
+  p.enfants.splice(i,1); p.enfants.splice(j,0,n);
+  tout();
+}
+document.getElementById('btnGauche').addEventListener('click', function(){ deplacer(-1); });
+document.getElementById('btnDroite').addEventListener('click', function(){ deplacer(1); });
+document.getElementById('btnRepli').addEventListener('click', function(){ basculer(etat.selection); });
+
+document.getElementById('btnSupprimer').addEventListener('click', function(){
+  var n = trouver(etat.selection); if(!n) return;
+  var p = parentDe(n.id); if(!p) return;
+  if(n.enfants.length && !confirm('Supprimer « ' + n.nom + ' » et les ' + nbTaxons(n) + ' taxons qu\'il contient ?')) return;
+  memoriser();
+  p.enfants.splice(p.enfants.indexOf(n), 1);
+  nettoyer(p);
+  // la racine ne garde jamais une branche unique menant à un groupe
+  while(etat.racine.enfants.length === 1 && !estTerminal(etat.racine.enfants[0])){
+    var seul = etat.racine.enfants[0];
+    seul.innovations = etat.racine.innovations.concat(seul.innovations);
+    etat.racine = seul;
+  }
+  etat.selection = trouver(p.id) ? p.id : etat.racine.id;
+  tout();
+  dire('Branche supprimée');
+});
+
+/* ====================== Barre d'outils ====================== */
+document.getElementById('titreArbre').addEventListener('input', function(){ etat.titre = this.value; });
+document.getElementById('titreArbre').addEventListener('focus', memoriser);
+
+document.getElementById('btnVierge').addEventListener('click', function(){
+  memoriser();
+  etat.racine = arbreVierge();
+  etat.selection = null;
+  tout(); ajuster();
+});
+document.getElementById('btnDeplierTout').addEventListener('click', function(){
+  memoriser();
+  parcourir(etat.racine, function(n){ n.replie = false; });
+  tout(); ajuster();
+});
+/* Menu burger */
+var btnOutils = document.getElementById('btnOutils');
+var voile = document.getElementById('voile');
+function menuOuvert(){ return document.body.classList.contains('menu-ouvert'); }
+function ouvrirMenu(){
+  document.body.classList.add('menu-ouvert');
+  btnOutils.setAttribute('aria-expanded','true');
+  fermerPanneau();
+  var premier = document.querySelector('#barreOutils .btn');
+  if(premier) setTimeout(function(){ premier.focus(); }, 60);
+}
+function fermerMenu(retourFocus){
+  document.body.classList.remove('menu-ouvert');
+  btnOutils.setAttribute('aria-expanded','false');
+  if(retourFocus) btnOutils.focus();
+}
+btnOutils.addEventListener('click', function(){ menuOuvert() ? fermerMenu() : ouvrirMenu(); });
+document.getElementById('btnFermerMenu').addEventListener('click', function(){ fermerMenu(true); });
+voile.addEventListener('click', function(){ fermerMenu(); });
+document.getElementById('barreOutils').addEventListener('click', function(ev){
+  if(ev.target.closest('.btn') && ev.target.closest('.btn').id !== 'btnFermerMenu' && petitEcran()) fermerMenu();
+});
+
+document.getElementById('btnAnnuler').addEventListener('click', annuler);
+document.getElementById('btnAnnuler').disabled = true;
+
+function zoomer(f){
+  etat.zoom = Math.min(2, Math.max(0.25, etat.zoom * f));
+  rendreArbre();
+}
+document.getElementById('btnPlus').addEventListener('click', function(){ zoomer(1.15); });
+document.getElementById('btnMoins').addEventListener('click', function(){ zoomer(1/1.15); });
+function ajuster(){
+  var vb = svgEl.getAttribute('viewBox');
+  if(!vb) return;
+  var parts = vb.split(' ');
+  var largeur = parseFloat(parts[2]), hauteur = parseFloat(parts[3]);
+  var dispoL = canevas.clientWidth - 16, dispoH = canevas.clientHeight - 52;
+  if(dispoL <= 0) return;
+  var ideal = Math.min(dispoL/largeur, dispoH > 80 ? dispoH/hauteur : 1.6);
+  etat.zoom = Math.min(1.6, Math.max(0.55, ideal));   // sous 0,55 le texte devient illisible : on laisse défiler
+  rendreArbre();
+}
+document.getElementById('btnAjuster').addEventListener('click', ajuster);
+
+/* ====================== Import / export ====================== */
+function telecharger(nomFic, contenu, type){
+  var blob = new Blob([contenu], {type:type});
+  var url = URL.createObjectURL(blob);
+  var a = document.createElement('a');
+  a.href = url; a.download = nomFic;
+  document.body.appendChild(a); a.click();
+  document.body.removeChild(a);
+  setTimeout(function(){ URL.revokeObjectURL(url); }, 1000);
+}
+function nomFichier(ext){
+  var base = (etat.titre || 'arbre-phylogenetique')
+    .toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g,'')
+    .replace(/[^a-z0-9]+/g,'-').replace(/(^-|-$)/g,'');
+  return (base || 'arbre-phylogenetique') + '.' + ext;
+}
+document.getElementById('btnExporter').addEventListener('click', function(){
+  var donnees = {format:'arbre-phylogenetique', version:1, titre:etat.titre, arbre:etat.racine};
+  telecharger(nomFichier('json'), JSON.stringify(donnees, null, 2), 'application/json');
+  dire('Arbre exporté en JSON');
+});
+document.getElementById('btnSvg').addEventListener('click', function(){
+  var copie = svgEl.cloneNode(true);
+  copie.setAttribute('xmlns', NS);
+  var vb = copie.getAttribute('viewBox').split(' ');
+  copie.setAttribute('width', vb[2]); copie.setAttribute('height', vb[3]);
+  var f = document.createElementNS(NS,'rect');
+  f.setAttribute('x',0); f.setAttribute('y',0);
+  f.setAttribute('width',vb[2]); f.setAttribute('height',vb[3]);
+  f.setAttribute('fill','#ffffff');
+  copie.insertBefore(f, copie.firstChild.nextSibling);
+  var t = document.createElementNS(NS,'text');
+  t.setAttribute('x', 24); t.setAttribute('y', 34);
+  t.setAttribute('style','font-family:\'IBM Plex Sans Condensed\',sans-serif;font-size:19px;font-weight:700;fill:#132437');
+  t.textContent = etat.titre || 'Arbre phylogénétique';
+  copie.appendChild(t);
+  telecharger(nomFichier('svg'), '<?xml version="1.0" encoding="UTF-8"?>\n' + copie.outerHTML, 'image/svg+xml');
+  dire('Arbre exporté en SVG');
+});
+
+document.getElementById('btnImporter').addEventListener('click', function(){
+  document.getElementById('fichier').click();
+});
+document.getElementById('fichier').addEventListener('change', function(ev){
+  var f = ev.target.files && ev.target.files[0];
+  if(!f) return;
+  var lecteur = new FileReader();
+  lecteur.onload = function(){
+    try{
+      var d = JSON.parse(lecteur.result);
+      var arbre = normaliser(d.arbre || d.racine || d);
+      memoriser();
+      etat.racine = arbre;
+      etat.titre = d.titre || f.name.replace(/\.json$/i,'');
+      document.getElementById('titreArbre').value = etat.titre;
+      etat.selection = null;
+      tout(); ajuster();
+      dire('Arbre importé : ' + nbTaxons(arbre) + ' taxons');
+    }catch(e){
+      dire('Fichier illisible : il doit contenir un arbre au format JSON exporté par cet outil.');
+    }
+    ev.target.value = '';
+  };
+  lecteur.readAsText(f);
+});
+
+function normaliser(n){
+  if(!n || typeof n !== 'object') throw new Error('nœud invalide');
+  var enfants = Array.isArray(n.enfants) ? n.enfants : (Array.isArray(n.children) ? n.children : []);
+  var type = n.type === 'espece' ? 'espece'
+           : (enfants.length ? 'noeud' : (n.type === 'noeud' ? 'noeud' : 'taxon'));
+  var f = ficheVide();
+  if(n.fiche && typeof n.fiche === 'object'){
+    ['nomBinomial','auteur','annee','intervalle','periode','notes'].forEach(function(k){
+      if(n.fiche[k]) f[k] = String(n.fiche[k]);
+    });
+    f.eteint = !!n.fiche.eteint;
+    if(n.fiche.rangs && typeof n.fiche.rangs === 'object'){
+      RANGS.forEach(function(r){ if(n.fiche.rangs[r[0]]) f.rangs[r[0]] = String(n.fiche.rangs[r[0]]); });
+    }
+  }
+  var res = {
+    id: uid(),
+    type: type,
+    nom: String(n.nom || n.name || 'Sans nom'),
+    innovations: Array.isArray(n.innovations) ? n.innovations.map(String) : [],
+    extraGroupe: !!(n.extraGroupe || n.outgroup),
+    replie: !!n.replie,
+    enfants: enfants.map(normaliser)
+  };
+  if(type === 'espece' || n.fiche) res.fiche = f;
+  return res;
+}
+
+/* ====================== Démarrage ====================== */
+etat.racine = arbreVierge();
+etat.titre = document.getElementById('titreArbre').value;
+tout();
+if(document.readyState === 'complete') ajuster();
+else window.addEventListener('load', ajuster);
+var t0;
+window.addEventListener('resize', function(){
+  clearTimeout(t0);
+  t0 = setTimeout(function(){
+    ajuster();
+    if(!petitEcran()){
+      panneau.classList.remove('ouvert');
+      btnRouvrir.hidden = true;
+      fermerMenu();
+    }
+  }, 200);
+});
+
+})();
+</script>
+</body>
+</html>
